@@ -43,29 +43,48 @@ class Vision:
 
             time.sleep(0.025)
 
-    def wait_for_pixel_change(self, x: int, y: int, timeout: float = 10.0):
+    def wait_for_circle_appear(self, x: int, y: int, timeout: float = 15.0, radius: int = 8):
         """
-        Attend que le pixel à la position (x, y) ne soit plus noir.
-        Utile pour synchroniser sur le premier cercle.
+        Attend qu'un cercle d'approche apparaisse autour de (x, y).
+        On compare la luminosité moyenne d'une petite zone à un baseline.
         """
+        import time
+        import numpy as np
+
+        # Petite zone autour du point
+        x1 = max(0, x - radius)
+        y1 = max(0, y - radius)
+        x2 = x + radius
+        y2 = y + radius
+
+        # Baseline : luminosité juste après l'écran noir
+        img = self.sct.grab(self.monitor)
+        data = np.array(img)[:, :, :3].astype(np.float32)
+        baseline = np.mean(data[y1:y2, x1:x2])
+
+        if Config.DEBUG:
+            print(f"[Vision] Baseline luminosité zone ({x},{y}) = {baseline:.1f}")
+
         start = time.perf_counter()
 
         while True:
             img = self.sct.grab(self.monitor)
-            data = np.array(img)[:, :, :3]
+            data = np.array(img)[:, :, :3].astype(np.float32)
+            current = np.mean(data[y1:y2, x1:x2])
 
-            # Attention : mss donne (height, width), donc data[y, x]
-            pixel = data[y, x]
-
-            if not np.array_equal(pixel, [0, 0, 0]):
+            # On considère que le cercle apparaît quand la luminosité monte clairement
+            if current > baseline + 25:          # seuil à ajuster si besoin (15-40)
                 if Config.DEBUG:
-                    print(f"[Vision] Pixel non-noir détecté à ({x}, {y}) → {pixel}")
+                    print(f"[Vision] Cercle détecté ! luminosité {current:.1f} (baseline {baseline:.1f})")
                 return
 
             if time.perf_counter() - start > timeout:
-                raise TimeoutError(f"Timeout : le pixel ({x}, {y}) est resté noir.")
+                raise TimeoutError(
+                    f"Timeout : aucun cercle détecté à ({x}, {y}) "
+                    f"(baseline={baseline:.1f}, actuel={current:.1f})"
+                )
 
-            time.sleep(0.01)
+            time.sleep(0.008)
 
     def close(self):
         """Ferme proprement mss."""

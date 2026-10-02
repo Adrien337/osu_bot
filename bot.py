@@ -1,4 +1,5 @@
 import time
+import mouse
 from config import Config
 from screen import Screen
 from window import Window
@@ -98,25 +99,36 @@ class OsuBot:
         self.spinner_player = SpinnerPlayer(self.screen, self.timing)
 
     def _synchronize(self):
-        """
-        Synchronisation simple et stable.
-        """
         print("[Bot] En attente de l'écran noir...")
         self.vision.wait_for_black_screen()
-
         self.screen.update()
 
-        first_object = self.beatmap.hit_objects[0]
+        first = self.beatmap.hit_objects[0]
         preempt = Timing.ar_to_preempt(self.beatmap.approach_rate)
 
-        print(f"[Bot] Premier objet @ {first_object.time:.0f}ms | Preempt AR = {preempt:.0f}ms")
-        print(f"[Bot] TIMING_OFFSET = {Config.TIMING_OFFSET} ms")
+        sx, sy = self.screen.osu_to_screen(first.x, first.y)
 
-        # Petit délai pour laisser l'écran noir se stabiliser
-        time.sleep(0.06)
+        # Souris dans le coin
+        print("[Bot] Souris rangée dans le coin...")
+        mouse.move(10, 10, absolute=True, duration=0)
 
-        # Démarre le chrono
+        print(f"[Bot] Premier objet @ {first.time:.0f}ms | Preempt = {preempt:.0f}ms")
+        print(f"[Bot] Surveillance de la zone ({sx:.0f}, {sy:.0f})...")
+
+        # Attente de l'apparition du cercle
+        self.vision.wait_for_circle_appear(int(sx), int(sy), timeout=15.0)
+
+        # === POINT IMPORTANT ===
+        # On compense le fait que la détection arrive ~160ms après le vrai début du preempt
+        detection_time = first.time - preempt + 160
+
         self.timing.start()
+        self.timing.offset = detection_time + Config.TIMING_OFFSET   # ← cette ligne est critique
+
+        print(f"[Bot] Sync OK → temps initial = {self.timing.offset:.0f}ms")
+
+        # Placement de la souris
+        self.circle_player.move_to(first.x, first.y)
 
     def _play_objects(self):
         print("[Bot] Début de la map !")
